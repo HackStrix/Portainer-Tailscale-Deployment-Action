@@ -61,7 +61,7 @@ export function getConfig(): ActionConfig {
     const oauthClientId = core.getInput('ts_oauth_client_id');
     const oauthSecret = core.getInput('ts_oauth_secret');
     const authKey = core.getInput('ts_authkey');
-    const tags = core.getInput('ts_tags') || 'tag:ci';
+    const tags = core.getInput('ts_tags') || '';
     const hostnameInput = core.getInput('ts_hostname');
     const connectTimeout = parseInt(core.getInput('ts_connect_timeout') || '60', 10);
 

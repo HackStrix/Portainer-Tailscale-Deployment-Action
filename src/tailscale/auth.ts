@@ -107,15 +107,23 @@ async function generateAuthKey(accessToken: string, tags: string): Promise<strin
         .map((t) => t.trim())
         .filter((t) => t !== '');
 
+    const createOptions: Record<string, unknown> = {
+        reusable: false,
+        ephemeral: true,
+        preauthorized: true,
+    };
+
+    // Only include tags if provided — allows running without ACL tags configured
+    if (tagList.length > 0) {
+        createOptions.tags = tagList;
+    } else {
+        core.info('No tags specified — generating auth key without ACL tags');
+    }
+
     const requestBody = {
         capabilities: {
             devices: {
-                create: {
-                    reusable: false,
-                    ephemeral: true,
-                    preauthorized: true,
-                    tags: tagList,
-                },
+                create: createOptions,
             },
         },
         expirySeconds: 300, // 5 minute expiry — plenty for a CI run

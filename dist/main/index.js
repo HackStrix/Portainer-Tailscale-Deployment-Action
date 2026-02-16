@@ -57,7 +57,7 @@ function getConfig() {
     const oauthClientId = core.getInput('ts_oauth_client_id');
     const oauthSecret = core.getInput('ts_oauth_secret');
     const authKey = core.getInput('ts_authkey');
-    const tags = core.getInput('ts_tags') || 'tag:ci';
+    const tags = core.getInput('ts_tags') || '';
     const hostnameInput = core.getInput('ts_hostname');
     const connectTimeout = parseInt(core.getInput('ts_connect_timeout') || '60', 10);
     // Validate: check partial OAuth first for better error messages
@@ -639,15 +639,22 @@ async function generateAuthKey(accessToken, tags) {
         .split(',')
         .map((t) => t.trim())
         .filter((t) => t !== '');
+    const createOptions = {
+        reusable: false,
+        ephemeral: true,
+        preauthorized: true,
+    };
+    // Only include tags if provided — allows running without ACL tags configured
+    if (tagList.length > 0) {
+        createOptions.tags = tagList;
+    }
+    else {
+        core.info('No tags specified — generating auth key without ACL tags');
+    }
     const requestBody = {
         capabilities: {
             devices: {
-                create: {
-                    reusable: false,
-                    ephemeral: true,
-                    preauthorized: true,
-                    tags: tagList,
-                },
+                create: createOptions,
             },
         },
         expirySeconds: 300, // 5 minute expiry — plenty for a CI run

@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# TypeScript compiled output
+lib/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+
+# Environment
+.env
+.env.local

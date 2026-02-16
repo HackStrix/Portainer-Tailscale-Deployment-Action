@@ -1,0 +1,75 @@
+name: 'Portainer-Tailscale Deploy'
+description: 'Deploy Docker Compose stacks to a private Portainer instance via a secure Tailscale tunnel'
+author: 'Sankalp Narula'
+
+branding:
+  icon: 'upload-cloud'
+  color: 'blue'
+
+inputs:
+  # --- Tailscale Configuration ---
+  ts_oauth_client_id:
+    description: 'Tailscale OAuth Client ID (recommended over ts_authkey)'
+    required: false
+  ts_oauth_secret:
+    description: 'Tailscale OAuth Client Secret'
+    required: false
+  ts_authkey:
+    description: 'Pre-generated Tailscale auth key (fallback if OAuth is not configured)'
+    required: false
+  ts_tags:
+    description: 'Comma-separated ACL tags for the ephemeral Tailscale node'
+    required: false
+    default: 'tag:ci'
+  ts_hostname:
+    description: 'Hostname for the ephemeral Tailscale node'
+    required: false
+    default: ''
+  ts_connect_timeout:
+    description: 'Seconds to wait for the Tailscale route to become available'
+    required: false
+    default: '60'
+
+  # --- Portainer Configuration ---
+  portainer_url:
+    description: 'Full Portainer URL including port (e.g. https://my-nas.tailnet.ts.net:9443)'
+    required: true
+  portainer_api_key:
+    description: 'Portainer API key for authentication'
+    required: true
+
+  # --- Deployment Configuration ---
+  stack_name:
+    description: 'Name of the Portainer stack to deploy'
+    required: true
+  compose_file:
+    description: 'Path to the Docker Compose file'
+    required: false
+    default: './docker-compose.yml'
+  endpoint_id:
+    description: 'Portainer endpoint/environment ID'
+    required: false
+    default: '1'
+  env_vars:
+    description: 'Multiline KEY=VALUE environment variables (replaces all stack env vars)'
+    required: false
+    default: ''
+  tls_skip_verify:
+    description: 'Skip TLS certificate verification (for self-signed certs)'
+    required: false
+    default: 'false'
+  action:
+    description: 'Action to perform: deploy (create-or-update) or delete'
+    required: false
+    default: 'deploy'
+
+outputs:
+  stack_id:
+    description: 'The Portainer stack ID after deployment'
+  stack_status:
+    description: 'The final status of the stack (created, updated, deleted)'
+
+runs:
+  using: 'node20'
+  main: 'dist/main/index.js'
+  post: 'dist/post/index.js'

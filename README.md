@@ -1,8 +1,8 @@
-# 🚀 Portainer-Tailscale Deploy Action
+# Portainer-Tailscale Deploy Action
 
 A GitHub Action that creates a secure, temporary bridge to your private network via **Tailscale** to deploy or update stacks on a **Portainer** instance. No public ports, no VPN juggling—just secure CI/CD.
 
-## ✨ Features
+## Features
 
 * **Zero-Config Tunneling:** Automatically joins your Tailnet using ephemeral nodes
 * **Stack Lifecycle Management:** Create, update, or delete Portainer stacks via the API
@@ -49,7 +49,7 @@ Restrict the CI node's access in your Tailscale ACL policy:
 
 ---
 
-## 🚀 Usage
+## Usage
 
 ```yaml
 - name: Deploy to Private Portainer
@@ -92,7 +92,7 @@ If you prefer not to set up OAuth, you can use a pre-generated Tailscale auth ke
 
 ---
 
-## 📋 Inputs
+## Inputs
 
 | Input | Required | Default | Description |
 |---|---|---|---|
@@ -122,7 +122,7 @@ If you prefer not to set up OAuth, you can use a pre-generated Tailscale auth ke
 
 ---
 
-## 🏗️ Development
+## Development
 
 ```bash
 # Install dependencies
@@ -139,6 +139,6 @@ npm run build
 
 ---
 
-## 📄 License
+## License
 
 MIT

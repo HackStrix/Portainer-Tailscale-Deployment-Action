@@ -45,10 +45,20 @@ export interface DeploymentConfig {
     action: 'deploy' | 'delete';
 }
 
+export interface RegistryConfig {
+    /** Registry URL (e.g. ghcr.io) */
+    url: string;
+    /** Registry username */
+    username: string;
+    /** Registry password/token */
+    token: string;
+}
+
 export interface ActionConfig {
     tailscale: TailscaleConfig;
     portainer: PortainerConfig;
     deployment: DeploymentConfig;
+    registry: RegistryConfig;
 }
 
 /**
@@ -123,6 +133,19 @@ export function getConfig(): ActionConfig {
     }
     const composeFileContent = fs.readFileSync(resolvedComposePath, 'utf-8');
 
+    // --- Registry ---
+    const registryUrl = core.getInput('registry_url') || '';
+    const registryUsername = core.getInput('registry_username') || '';
+    const registryToken = core.getInput('registry_token') || '';
+
+    // Validate: if any registry field is set, all must be set
+    const hasRegistry = registryUrl !== '' || registryUsername !== '' || registryToken !== '';
+    if (hasRegistry && (registryUrl === '' || registryUsername === '' || registryToken === '')) {
+        throw new Error(
+            'Incomplete registry config: all of registry_url, registry_username, and registry_token must be provided'
+        );
+    }
+
     return {
         tailscale: {
             oauthClientId,
@@ -144,6 +167,11 @@ export function getConfig(): ActionConfig {
             envVarsRaw,
             tlsSkipVerify,
             action: actionInput,
+        },
+        registry: {
+            url: registryUrl,
+            username: registryUsername,
+            token: registryToken,
         },
     };
 }

@@ -58,6 +58,21 @@ inputs:
     description: 'Skip TLS certificate verification (for self-signed certs)'
     required: false
     default: 'false'
+
+  # --- Registry Configuration (optional) ---
+  registry_url:
+    description: 'Container registry URL (e.g. ghcr.io) — if set, configures credentials in Portainer'
+    required: false
+    default: ''
+  registry_username:
+    description: 'Registry username (e.g. your GitHub username for GHCR)'
+    required: false
+    default: ''
+  registry_token:
+    description: 'Registry password or access token'
+    required: false
+    default: ''
+
   action:
     description: 'Action to perform: deploy (create-or-update) or delete'
     required: false

@@ -9,6 +9,7 @@ import { getAuthKey } from './tailscale/auth';
 import { connectTailscale } from './tailscale/connect';
 import { PortainerClient } from './portainer/client';
 import { resolveEndpointId } from './portainer/endpoints';
+import { ensureRegistry } from './portainer/registries';
 import { deployStack, removeStack } from './portainer/stacks';
 import { parseEnvVars } from './utils/env-parser';
 
@@ -48,7 +49,20 @@ async function run(): Promise<void> {
             config.deployment.tlsSkipVerify
         );
 
-        // Step 5: Resolve endpoint ID (auto-detect if not specified)
+        // Step 5: Configure registry credentials (if provided)
+        if (config.registry.url) {
+            core.startGroup('🔐 Registry Configuration');
+            core.setSecret(config.registry.token);
+            await ensureRegistry(
+                portainerClient,
+                config.registry.url,
+                config.registry.username,
+                config.registry.token
+            );
+            core.endGroup();
+        }
+
+        // Step 6: Resolve endpoint ID (auto-detect if not specified)
         const endpointId = await resolveEndpointId(
             portainerClient,
             config.deployment.endpointId

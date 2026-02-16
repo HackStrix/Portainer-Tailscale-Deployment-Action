@@ -104,6 +104,15 @@ function getConfig() {
         throw new Error(`Compose file not found: ${resolvedComposePath}`);
     }
     const composeFileContent = fs.readFileSync(resolvedComposePath, 'utf-8');
+    // --- Registry ---
+    const registryUrl = core.getInput('registry_url') || '';
+    const registryUsername = core.getInput('registry_username') || '';
+    const registryToken = core.getInput('registry_token') || '';
+    // Validate: if any registry field is set, all must be set
+    const hasRegistry = registryUrl !== '' || registryUsername !== '' || registryToken !== '';
+    if (hasRegistry && (registryUrl === '' || registryUsername === '' || registryToken === '')) {
+        throw new Error('Incomplete registry config: all of registry_url, registry_username, and registry_token must be provided');
+    }
     return {
         tailscale: {
             oauthClientId,
@@ -125,6 +134,11 @@ function getConfig() {
             envVarsRaw,
             tlsSkipVerify,
             action: actionInput,
+        },
+        registry: {
+            url: registryUrl,
+            username: registryUsername,
+            token: registryToken,
         },
     };
 }
@@ -181,6 +195,7 @@ const auth_1 = __nccwpck_require__(3441);
 const connect_1 = __nccwpck_require__(153);
 const client_1 = __nccwpck_require__(1598);
 const endpoints_1 = __nccwpck_require__(3943);
+const registries_1 = __nccwpck_require__(3722);
 const stacks_1 = __nccwpck_require__(7820);
 const env_parser_1 = __nccwpck_require__(2173);
 async function run() {
@@ -211,7 +226,14 @@ async function run() {
         core.endGroup();
         // Step 4: Create Portainer client
         const portainerClient = new client_1.PortainerClient(config.portainer.url, config.portainer.apiKey, config.deployment.tlsSkipVerify);
-        // Step 5: Resolve endpoint ID (auto-detect if not specified)
+        // Step 5: Configure registry credentials (if provided)
+        if (config.registry.url) {
+            core.startGroup('🔐 Registry Configuration');
+            core.setSecret(config.registry.token);
+            await (0, registries_1.ensureRegistry)(portainerClient, config.registry.url, config.registry.username, config.registry.token);
+            core.endGroup();
+        }
+        // Step 6: Resolve endpoint ID (auto-detect if not specified)
         const endpointId = await (0, endpoints_1.resolveEndpointId)(portainerClient, config.deployment.endpointId);
         // Step 6: Parse env vars
         const envVars = (0, env_parser_1.parseEnvVars)(config.deployment.envVarsRaw);
@@ -466,6 +488,94 @@ async function resolveEndpointId(client, providedId) {
     throw new Error(`Multiple environments found. Please specify endpoint_id:\n${list}`);
 }
 //# sourceMappingURL=endpoints.js.map
+
+/***/ }),
+
+/***/ 3722:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+/**
+ * Portainer registry management — ensures private registries are configured
+ * so Docker can pull images during stack deployment.
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ensureRegistry = ensureRegistry;
+const core = __importStar(__nccwpck_require__(7484));
+/**
+ * Ensures a container registry is configured in Portainer.
+ *
+ * - If a registry with the same URL already exists, updates credentials
+ * - If not, creates a new registry entry
+ *
+ * @param client - Portainer API client
+ * @param registryUrl - Registry URL (e.g. "ghcr.io")
+ * @param username - Registry username
+ * @param password - Registry password or token
+ */
+async function ensureRegistry(client, registryUrl, username, password) {
+    core.info(`Configuring registry: ${registryUrl}`);
+    // Check if registry already exists
+    const registries = await client.get('/api/registries');
+    const existing = registries.find((r) => r.URL === registryUrl || r.URL === `https://${registryUrl}`);
+    if (existing) {
+        core.info(`Registry "${registryUrl}" already exists (ID: ${existing.Id}) — updating credentials`);
+        await client.put(`/api/registries/${existing.Id}`, {
+            Name: existing.Name,
+            URL: registryUrl,
+            Authentication: true,
+            Username: username,
+            Password: password,
+        });
+        core.info('Registry credentials updated');
+        return;
+    }
+    // Create new registry — Type 3 = Custom registry
+    await client.post('/api/registries', {
+        Name: `${registryUrl} (auto-configured by CI)`,
+        URL: registryUrl,
+        Type: 3,
+        Authentication: true,
+        Username: username,
+        Password: password,
+    });
+    core.info(`Registry "${registryUrl}" configured successfully`);
+}
+//# sourceMappingURL=registries.js.map
 
 /***/ }),
 

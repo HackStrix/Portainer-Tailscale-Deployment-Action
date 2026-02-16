@@ -57,7 +57,7 @@ function getConfig() {
     const oauthClientId = core.getInput('ts_oauth_client_id');
     const oauthSecret = core.getInput('ts_oauth_secret');
     const authKey = core.getInput('ts_authkey');
-    const tags = core.getInput('ts_tags') || '';
+    const tags = core.getInput('ts_tags') || 'tag:ci';
     const hostnameInput = core.getInput('ts_hostname');
     const connectTimeout = parseInt(core.getInput('ts_connect_timeout') || '60', 10);
     // Validate: check partial OAuth first for better error messages
@@ -667,8 +667,9 @@ async function generateAuthKey(accessToken, tags) {
     const body = await response.readBody();
     if (statusCode !== 200) {
         throw new Error(`Failed to generate Tailscale auth key (HTTP ${statusCode}): ${body}. ` +
-            'Ensure your OAuth client has the "auth_keys" (write) and "devices" scopes, ' +
-            `and that the tag(s) [${tags}] are valid in your ACL policy.`);
+            `Tags are REQUIRED for OAuth-generated keys. ` +
+            `Add this to your Tailscale ACL policy under "tagOwners": { "${tags || 'tag:ci'}": ["autogroup:admin"] }. ` +
+            'Also ensure your OAuth client has the "auth_keys" (write) and "devices" scopes.');
     }
     const keyResponse = JSON.parse(body);
     core.info(`Generated ephemeral auth key (expires: ${keyResponse.expires})`);

@@ -18,9 +18,9 @@ inputs:
     description: 'Pre-generated Tailscale auth key (fallback if OAuth is not configured)'
     required: false
   ts_tags:
-    description: 'Comma-separated ACL tags for the ephemeral Tailscale node (e.g. tag:ci)'
+    description: 'Comma-separated ACL tags for the ephemeral node (required for OAuth, e.g. tag:ci)'
     required: false
-    default: ''
+    default: 'tag:ci'
   ts_hostname:
     description: 'Hostname for the ephemeral Tailscale node'
     required: false

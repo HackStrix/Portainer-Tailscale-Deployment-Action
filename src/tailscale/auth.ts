@@ -144,8 +144,9 @@ async function generateAuthKey(accessToken: string, tags: string): Promise<strin
     if (statusCode !== 200) {
         throw new Error(
             `Failed to generate Tailscale auth key (HTTP ${statusCode}): ${body}. ` +
-            'Ensure your OAuth client has the "auth_keys" (write) and "devices" scopes, ' +
-            `and that the tag(s) [${tags}] are valid in your ACL policy.`
+            `Tags are REQUIRED for OAuth-generated keys. ` +
+            `Add this to your Tailscale ACL policy under "tagOwners": { "${tags || 'tag:ci'}": ["autogroup:admin"] }. ` +
+            'Also ensure your OAuth client has the "auth_keys" (write) and "devices" scopes.'
         );
     }
 

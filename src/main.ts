@@ -8,6 +8,7 @@ import { getConfig } from './config';
 import { getAuthKey } from './tailscale/auth';
 import { connectTailscale } from './tailscale/connect';
 import { PortainerClient } from './portainer/client';
+import { resolveEndpointId } from './portainer/endpoints';
 import { deployStack, removeStack } from './portainer/stacks';
 import { parseEnvVars } from './utils/env-parser';
 
@@ -47,20 +48,26 @@ async function run(): Promise<void> {
             config.deployment.tlsSkipVerify
         );
 
-        // Step 5: Parse env vars
+        // Step 5: Resolve endpoint ID (auto-detect if not specified)
+        const endpointId = await resolveEndpointId(
+            portainerClient,
+            config.deployment.endpointId
+        );
+
+        // Step 6: Parse env vars
         const envVars = parseEnvVars(config.deployment.envVarsRaw);
         if (envVars.length > 0) {
             core.info(`📦 ${envVars.length} environment variable(s) configured`);
         }
 
-        // Step 6: Execute deployment action
+        // Step 7: Execute deployment action
         core.startGroup(`🚀 ${config.deployment.action === 'deploy' ? 'Deploying' : 'Deleting'} Stack`);
 
         let result;
         if (config.deployment.action === 'deploy') {
             result = await deployStack(
                 portainerClient,
-                config.deployment.endpointId,
+                endpointId,
                 config.deployment.stackName,
                 config.deployment.composeFileContent,
                 envVars
@@ -68,7 +75,7 @@ async function run(): Promise<void> {
         } else {
             result = await removeStack(
                 portainerClient,
-                config.deployment.endpointId,
+                endpointId,
                 config.deployment.stackName
             );
         }

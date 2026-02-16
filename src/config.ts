@@ -106,9 +106,9 @@ export function getConfig(): ActionConfig {
         throw new Error(`Invalid action "${actionInput}" — must be "deploy" or "delete"`);
     }
 
-    // Validate endpoint_id
-    if (isNaN(endpointId) || endpointId < 1) {
-        throw new Error(`Invalid endpoint_id "${core.getInput('endpoint_id')}" — must be a positive integer`);
+    // Validate endpoint_id (0 = auto-detect)
+    if (isNaN(endpointId) || endpointId < 0) {
+        throw new Error(`Invalid endpoint_id "${core.getInput('endpoint_id')}" — must be a non-negative integer (0 = auto-detect)`);
     }
 
     // Validate connect timeout

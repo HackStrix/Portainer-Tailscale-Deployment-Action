@@ -47,9 +47,9 @@ inputs:
     required: false
     default: './docker-compose.yml'
   endpoint_id:
-    description: 'Portainer endpoint/environment ID'
+    description: 'Portainer endpoint/environment ID (0 = auto-detect)'
     required: false
-    default: '1'
+    default: '0'
   env_vars:
     description: 'Multiline KEY=VALUE environment variables (replaces all stack env vars)'
     required: false

@@ -90,9 +90,9 @@ function getConfig() {
     if (actionInput !== 'deploy' && actionInput !== 'delete') {
         throw new Error(`Invalid action "${actionInput}" — must be "deploy" or "delete"`);
     }
-    // Validate endpoint_id
-    if (isNaN(endpointId) || endpointId < 1) {
-        throw new Error(`Invalid endpoint_id "${core.getInput('endpoint_id')}" — must be a positive integer`);
+    // Validate endpoint_id (0 = auto-detect)
+    if (isNaN(endpointId) || endpointId < 0) {
+        throw new Error(`Invalid endpoint_id "${core.getInput('endpoint_id')}" — must be a non-negative integer (0 = auto-detect)`);
     }
     // Validate connect timeout
     if (isNaN(connectTimeout) || connectTimeout < 1) {
@@ -180,6 +180,7 @@ const config_1 = __nccwpck_require__(6472);
 const auth_1 = __nccwpck_require__(3441);
 const connect_1 = __nccwpck_require__(153);
 const client_1 = __nccwpck_require__(1598);
+const endpoints_1 = __nccwpck_require__(3943);
 const stacks_1 = __nccwpck_require__(7820);
 const env_parser_1 = __nccwpck_require__(2173);
 async function run() {
@@ -210,19 +211,21 @@ async function run() {
         core.endGroup();
         // Step 4: Create Portainer client
         const portainerClient = new client_1.PortainerClient(config.portainer.url, config.portainer.apiKey, config.deployment.tlsSkipVerify);
-        // Step 5: Parse env vars
+        // Step 5: Resolve endpoint ID (auto-detect if not specified)
+        const endpointId = await (0, endpoints_1.resolveEndpointId)(portainerClient, config.deployment.endpointId);
+        // Step 6: Parse env vars
         const envVars = (0, env_parser_1.parseEnvVars)(config.deployment.envVarsRaw);
         if (envVars.length > 0) {
             core.info(`📦 ${envVars.length} environment variable(s) configured`);
         }
-        // Step 6: Execute deployment action
+        // Step 7: Execute deployment action
         core.startGroup(`🚀 ${config.deployment.action === 'deploy' ? 'Deploying' : 'Deleting'} Stack`);
         let result;
         if (config.deployment.action === 'deploy') {
-            result = await (0, stacks_1.deployStack)(portainerClient, config.deployment.endpointId, config.deployment.stackName, config.deployment.composeFileContent, envVars);
+            result = await (0, stacks_1.deployStack)(portainerClient, endpointId, config.deployment.stackName, config.deployment.composeFileContent, envVars);
         }
         else {
-            result = await (0, stacks_1.removeStack)(portainerClient, config.deployment.endpointId, config.deployment.stackName);
+            result = await (0, stacks_1.removeStack)(portainerClient, endpointId, config.deployment.stackName);
         }
         core.endGroup();
         // Step 7: Set outputs
@@ -387,6 +390,82 @@ class PortainerClient {
 }
 exports.PortainerClient = PortainerClient;
 //# sourceMappingURL=client.js.map
+
+/***/ }),
+
+/***/ 3943:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+/**
+ * Portainer endpoint (environment) operations.
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.resolveEndpointId = resolveEndpointId;
+const core = __importStar(__nccwpck_require__(7484));
+/**
+ * Resolves the endpoint ID to use.
+ *
+ * If an endpoint ID is provided (> 0), returns it directly.
+ * Otherwise, fetches all endpoints and:
+ *   - If exactly one exists, uses it automatically
+ *   - If multiple exist, throws with a list so the user can pick
+ *   - If none exist, throws an error
+ */
+async function resolveEndpointId(client, providedId) {
+    if (providedId > 0) {
+        return providedId;
+    }
+    core.info('No endpoint_id specified — auto-detecting...');
+    const endpoints = await client.get('/api/endpoints');
+    if (endpoints.length === 0) {
+        throw new Error('No environments found in Portainer. Create one first.');
+    }
+    if (endpoints.length === 1) {
+        core.info(`Auto-detected endpoint: "${endpoints[0].Name}" (ID: ${endpoints[0].Id})`);
+        return endpoints[0].Id;
+    }
+    // Multiple endpoints — can't guess, list them for the user
+    const list = endpoints
+        .map((e) => `  - ID ${e.Id}: "${e.Name}"`)
+        .join('\n');
+    throw new Error(`Multiple environments found. Please specify endpoint_id:\n${list}`);
+}
+//# sourceMappingURL=endpoints.js.map
 
 /***/ }),
 

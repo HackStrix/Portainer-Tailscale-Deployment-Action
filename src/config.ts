@@ -39,6 +39,8 @@ export interface DeploymentConfig {
     endpointId: number;
     /** Raw multiline env vars string */
     envVarsRaw: string;
+    /** Raw multiline config file mappings string */
+    configFilesRaw: string;
     /** Skip TLS certificate verification */
     tlsSkipVerify: boolean;
     /** Action to perform */
@@ -108,6 +110,7 @@ export function getConfig(): ActionConfig {
     const composeFilePath = core.getInput('compose_file') || './docker-compose.yml';
     const endpointId = parseInt(core.getInput('endpoint_id') || '1', 10);
     const envVarsRaw = core.getInput('env_vars') || '';
+    const configFilesRaw = core.getInput('config_files') || '';
     const tlsSkipVerify = core.getInput('tls_skip_verify') === 'true';
     const actionInput = core.getInput('action') || 'deploy';
 
@@ -165,6 +168,7 @@ export function getConfig(): ActionConfig {
             composeFileContent,
             endpointId,
             envVarsRaw,
+            configFilesRaw,
             tlsSkipVerify,
             action: actionInput,
         },

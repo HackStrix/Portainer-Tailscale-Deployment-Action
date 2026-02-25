@@ -9,6 +9,14 @@ export interface StackEnvVar {
     value: string;
 }
 
+/** Config file to upload alongside the compose file */
+export interface ConfigFile {
+    /** Relative path within the stack's project directory */
+    remotePath: string;
+    /** File content */
+    content: string;
+}
+
 /** Stack status enum */
 export enum StackStatus {
     Active = 1,

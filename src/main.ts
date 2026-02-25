@@ -12,6 +12,8 @@ import { resolveEndpointId } from './portainer/endpoints';
 import { ensureRegistry } from './portainer/registries';
 import { deployStack, removeStack } from './portainer/stacks';
 import { parseEnvVars } from './utils/env-parser';
+import { parseConfigFiles } from './utils/config-file-parser';
+import { ConfigFile } from './portainer/types';
 
 async function run(): Promise<void> {
     try {
@@ -74,7 +76,20 @@ async function run(): Promise<void> {
             core.info(`📦 ${envVars.length} environment variable(s) configured`);
         }
 
-        // Step 7: Execute deployment action
+        // Step 7: Parse config files
+        const configFileEntries = parseConfigFiles(config.deployment.configFilesRaw);
+        const configFiles: ConfigFile[] = configFileEntries.map((entry) => ({
+            remotePath: entry.remotePath,
+            content: entry.content,
+        }));
+        if (configFiles.length > 0) {
+            core.info(`📎 ${configFiles.length} config file(s) to upload`);
+            for (const cf of configFiles) {
+                core.info(`   → ${cf.remotePath}`);
+            }
+        }
+
+        // Step 8: Execute deployment action
         core.startGroup(`🚀 ${config.deployment.action === 'deploy' ? 'Deploying' : 'Deleting'} Stack`);
 
         let result;
@@ -84,7 +99,8 @@ async function run(): Promise<void> {
                 endpointId,
                 config.deployment.stackName,
                 config.deployment.composeFileContent,
-                envVars
+                envVars,
+                configFiles
             );
         } else {
             result = await removeStack(
@@ -96,7 +112,7 @@ async function run(): Promise<void> {
 
         core.endGroup();
 
-        // Step 7: Set outputs
+        // Step 9: Set outputs
         core.setOutput('stack_id', result.stackId.toString());
         core.setOutput('stack_status', result.status);
 

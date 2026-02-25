@@ -21,6 +21,9 @@ jest.mock('@actions/core', () => ({
     warning: jest.fn(),
 }));
 
+import * as core from '@actions/core';
+const mockWarning = core.warning as jest.Mock;
+
 // Create a mock PortainerClient
 function createMockClient() {
     return {
@@ -28,6 +31,7 @@ function createMockClient() {
         post: jest.fn(),
         put: jest.fn(),
         delete: jest.fn(),
+        postFormData: jest.fn(),
     };
 }
 
@@ -92,7 +96,7 @@ describe('findStackByName', () => {
 });
 
 describe('createStack', () => {
-    it('should create a new stack with correct request body', async () => {
+    it('should create a new stack with correct request body (no config files)', async () => {
         const client = createMockClient();
         client.post.mockResolvedValue({ ...mockStack, Id: 99 });
 
@@ -115,6 +119,34 @@ describe('createStack', () => {
                 fromAppTemplate: false,
             }
         );
+        expect(client.postFormData).not.toHaveBeenCalled();
+    });
+
+    it('should use multipart form-data endpoint when config files are provided', async () => {
+        const client = createMockClient();
+        client.postFormData.mockResolvedValue({ ...mockStack, Id: 101 });
+
+        const envVars = [{ name: 'KEY', value: 'val' }];
+        const configFiles = [
+            { remotePath: 'traefik.yml', content: 'entryPoints:\n  web:\n    address: ":80"' },
+            { remotePath: 'configs/app.conf', content: 'server { listen 80; }' },
+        ];
+
+        const result = await createStack(
+            client as any,
+            1,
+            'new-stack',
+            'version: "3"',
+            envVars,
+            configFiles
+        );
+
+        expect(result.Id).toBe(101);
+        expect(client.postFormData).toHaveBeenCalledWith(
+            '/api/stacks/create/standalone/file?endpointId=1',
+            expect.any(FormData)
+        );
+        expect(client.post).not.toHaveBeenCalled();
     });
 });
 
@@ -151,6 +183,10 @@ describe('deleteStack', () => {
 });
 
 describe('deployStack', () => {
+    beforeEach(() => {
+        mockWarning.mockClear();
+    });
+
     it('should create a new stack when it does not exist', async () => {
         const client = createMockClient();
         client.get.mockResolvedValue([]); // No existing stacks
@@ -185,6 +221,53 @@ describe('deployStack', () => {
         expect(result).toEqual({ stackId: 42, status: 'updated' });
         expect(client.put).toHaveBeenCalled();
         expect(client.post).not.toHaveBeenCalled();
+    });
+
+    it('should pass config files to createStack on new stack', async () => {
+        const client = createMockClient();
+        client.get.mockResolvedValue([]); // No existing stacks
+        client.postFormData.mockResolvedValue({ ...mockStack, Id: 200 });
+
+        const configFiles = [
+            { remotePath: 'app.conf', content: 'config content' },
+        ];
+
+        const result = await deployStack(
+            client as any,
+            1,
+            'new-app',
+            'compose content',
+            [],
+            configFiles
+        );
+
+        expect(result).toEqual({ stackId: 200, status: 'created' });
+        expect(client.postFormData).toHaveBeenCalled();
+    });
+
+    it('should warn when config files are provided during update', async () => {
+        const client = createMockClient();
+        client.get.mockResolvedValue([mockStack]);
+        client.put.mockResolvedValue(mockStack);
+
+        const configFiles = [
+            { remotePath: 'app.conf', content: 'config content' },
+        ];
+
+        await deployStack(
+            client as any,
+            1,
+            'my-app',
+            'updated compose',
+            [],
+            configFiles
+        );
+
+        expect(mockWarning).toHaveBeenCalledWith(
+            expect.stringContaining('Config files are only uploaded on stack creation')
+        );
+        expect(client.put).toHaveBeenCalled();
+        expect(client.postFormData).not.toHaveBeenCalled();
     });
 });
 

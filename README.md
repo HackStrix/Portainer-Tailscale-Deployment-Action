@@ -121,6 +121,36 @@ steps:
         DB_PASSWORD=${{ secrets.DB_PASS }}
 ```
 
+### With Config Files
+
+Upload config files alongside your compose file (applied on stack creation):
+
+```yaml
+  - name: Deploy to Portainer
+    uses: hackstrix/portainer-tailscale-deployment-action@v1
+    with:
+      ts_oauth_client_id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+      ts_oauth_secret: ${{ secrets.TS_OAUTH_SECRET }}
+      portainer_url: 'https://my-server.tailnet.ts.net:9443'
+      portainer_api_key: ${{ secrets.PORTAINER_API_KEY }}
+      stack_name: 'my-app'
+      compose_file: './docker-compose.yml'
+      config_files: |
+        ./configs/traefik.yml:traefik.yml
+        ./configs/prometheus.yml:monitoring/prometheus.yml
+```
+
+Reference these files with relative volume mounts in your compose file:
+
+```yaml
+services:
+  traefik:
+    volumes:
+      - ./traefik.yml:/etc/traefik/traefik.yml
+```
+
+> **Note:** Config files are uploaded on **stack creation** only. If you update a stack that already exists, config files are not re-uploaded. To update config files, delete the stack first and redeploy.
+
 ### Using a Pre-generated Auth Key
 
 If you prefer not to set up OAuth:
@@ -155,6 +185,7 @@ If you prefer not to set up OAuth:
 | `compose_file` | No | `./docker-compose.yml` | Path to compose file |
 | `endpoint_id` | No | `0` (auto-detect) | Portainer environment ID |
 | `env_vars` | No | — | Multiline `KEY=VALUE` env vars |
+| `config_files` | No | — | Multiline `local_path:remote_path` config files (creation only) |
 | `tls_skip_verify` | No | `false` | Skip TLS verification |
 | `registry_url` | No | — | Registry URL (e.g. `ghcr.io`) |
 | `registry_username` | No | — | Registry username |
@@ -179,8 +210,9 @@ If you prefer not to set up OAuth:
 3. **Wait** — Retries until Portainer is reachable over the Tailscale route
 4. **Configure Registry** — If credentials provided, creates/updates registry in Portainer
 5. **Auto-Detect Endpoint** — If `endpoint_id` is `0`, fetches and uses the available endpoint
-6. **Deploy** — Creates a new stack or updates the existing one via Portainer API
-7. **Cleanup** — Post-step always runs `tailscale logout` to remove the ephemeral node
+6. **Upload Config Files** — If `config_files` provided and stack is new, uploads via multipart form-data
+7. **Deploy** — Creates a new stack or updates the existing one via Portainer API
+8. **Cleanup** — Post-step always runs `tailscale logout` to remove the ephemeral node
 
 ---
 

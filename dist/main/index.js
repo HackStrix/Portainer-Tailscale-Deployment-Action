@@ -84,6 +84,7 @@ function getConfig() {
     const composeFilePath = core.getInput('compose_file') || './docker-compose.yml';
     const endpointId = parseInt(core.getInput('endpoint_id') || '1', 10);
     const envVarsRaw = core.getInput('env_vars') || '';
+    const configFilesRaw = core.getInput('config_files') || '';
     const tlsSkipVerify = core.getInput('tls_skip_verify') === 'true';
     const actionInput = core.getInput('action') || 'deploy';
     // Validate action
@@ -132,6 +133,7 @@ function getConfig() {
             composeFileContent,
             endpointId,
             envVarsRaw,
+            configFilesRaw,
             tlsSkipVerify,
             action: actionInput,
         },
@@ -198,6 +200,7 @@ const endpoints_1 = __nccwpck_require__(3943);
 const registries_1 = __nccwpck_require__(3722);
 const stacks_1 = __nccwpck_require__(7820);
 const env_parser_1 = __nccwpck_require__(2173);
+const config_file_parser_1 = __nccwpck_require__(6009);
 async function run() {
     try {
         // Step 1: Parse and validate inputs
@@ -240,17 +243,29 @@ async function run() {
         if (envVars.length > 0) {
             core.info(`📦 ${envVars.length} environment variable(s) configured`);
         }
-        // Step 7: Execute deployment action
+        // Step 7: Parse config files
+        const configFileEntries = (0, config_file_parser_1.parseConfigFiles)(config.deployment.configFilesRaw);
+        const configFiles = configFileEntries.map((entry) => ({
+            remotePath: entry.remotePath,
+            content: entry.content,
+        }));
+        if (configFiles.length > 0) {
+            core.info(`📎 ${configFiles.length} config file(s) to upload`);
+            for (const cf of configFiles) {
+                core.info(`   → ${cf.remotePath}`);
+            }
+        }
+        // Step 8: Execute deployment action
         core.startGroup(`🚀 ${config.deployment.action === 'deploy' ? 'Deploying' : 'Deleting'} Stack`);
         let result;
         if (config.deployment.action === 'deploy') {
-            result = await (0, stacks_1.deployStack)(portainerClient, endpointId, config.deployment.stackName, config.deployment.composeFileContent, envVars);
+            result = await (0, stacks_1.deployStack)(portainerClient, endpointId, config.deployment.stackName, config.deployment.composeFileContent, envVars, configFiles);
         }
         else {
             result = await (0, stacks_1.removeStack)(portainerClient, endpointId, config.deployment.stackName);
         }
         core.endGroup();
-        // Step 7: Set outputs
+        // Step 9: Set outputs
         core.setOutput('stack_id', result.stackId.toString());
         core.setOutput('stack_status', result.status);
         core.info(`\n🎉 Done! Stack "${config.deployment.stackName}" — ${result.status} (ID: ${result.stackId})`);
@@ -345,6 +360,31 @@ class PortainerClient {
         core.debug(`POST ${url}`);
         const response = await this.client.post(url, JSON.stringify(body), this.headers);
         return this.handleResponse(response, 'POST', path);
+    }
+    /**
+     * Sends a POST request with multipart/form-data to the Portainer API.
+     * Used for file-based stack creation.
+     */
+    async postFormData(path, formData) {
+        const url = `${this.baseUrl}${path}`;
+        core.debug(`POST (form-data) ${url}`);
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-API-Key': this.headers['X-API-Key'],
+            },
+            body: formData,
+        });
+        const body = await response.text();
+        if (!response.ok) {
+            throw this.createError('POST', path, response.status, body);
+        }
+        try {
+            return JSON.parse(body);
+        }
+        catch {
+            throw new Error(`Failed to parse JSON response from POST ${path}: ${body.substring(0, 200)}`);
+        }
     }
     /**
      * Sends a PUT request to the Portainer API.
@@ -655,16 +695,35 @@ async function findStackByName(client, name, endpointId) {
 }
 /**
  * Creates a new standalone compose stack.
+ * When configFiles are provided, uses multipart/form-data upload via the /file endpoint.
+ * Otherwise, uses the existing /string endpoint with JSON body.
  */
-async function createStack(client, endpointId, name, composeContent, envVars) {
+async function createStack(client, endpointId, name, composeContent, envVars, configFiles = []) {
     core.info(`Creating stack "${name}"...`);
+    if (configFiles.length > 0) {
+        core.info(`📎 Uploading ${configFiles.length} config file(s) via multipart upload`);
+        const formData = new FormData();
+        formData.append('Name', name);
+        formData.append('Env', JSON.stringify(envVars));
+        // Main compose file as a Blob
+        const composeBlob = new Blob([composeContent], { type: 'application/x-yaml' });
+        formData.append('file', composeBlob, 'docker-compose.yml');
+        // Additional config files
+        for (const cf of configFiles) {
+            const fileBlob = new Blob([cf.content], { type: 'application/octet-stream' });
+            formData.append('file', fileBlob, cf.remotePath);
+        }
+        const stack = await client.postFormData(`/api/stacks/create/standalone/file?endpointId=${endpointId}`, formData);
+        core.info(`✅ Stack "${name}" created with config files (ID: ${stack.Id})`);
+        return stack;
+    }
+    // No config files — use the existing JSON /string endpoint
     const body = {
         name,
         stackFileContent: composeContent,
         env: envVars,
         fromAppTemplate: false,
     };
-    // type=2 = standalone compose stack
     const stack = await client.post(`/api/stacks/create/standalone/string?endpointId=${endpointId}`, body);
     core.info(`✅ Stack "${name}" created (ID: ${stack.Id})`);
     return stack;
@@ -694,15 +753,21 @@ async function deleteStack(client, stackId, endpointId) {
 }
 /**
  * Orchestrates stack deployment: finds the stack, then either creates or updates.
+ * Config files are only uploaded on creation (Portainer update API doesn't support multipart).
  */
-async function deployStack(client, endpointId, stackName, composeContent, envVars) {
+async function deployStack(client, endpointId, stackName, composeContent, envVars, configFiles = []) {
     const existing = await findStackByName(client, stackName, endpointId);
     if (existing) {
+        if (configFiles.length > 0) {
+            core.warning('⚠️ Config files are only uploaded on stack creation. ' +
+                'The existing stack will be updated with new compose content and env vars only. ' +
+                'To re-upload config files, delete the stack first and redeploy.');
+        }
         const updated = await updateStack(client, existing.Id, endpointId, composeContent, envVars);
         return { stackId: updated.Id, status: 'updated' };
     }
     else {
-        const created = await createStack(client, endpointId, stackName, composeContent, envVars);
+        const created = await createStack(client, endpointId, stackName, composeContent, envVars, configFiles);
         return { stackId: created.Id, status: 'created' };
     }
 }
@@ -1036,6 +1101,122 @@ async function waitForPortainerReachable(portainerUrl, timeoutSeconds, tlsSkipVe
     }
 }
 //# sourceMappingURL=connect.js.map
+
+/***/ }),
+
+/***/ 6009:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+/**
+ * Parse multiline config file mappings into structured objects.
+ * Each line maps a local file to a remote path in the stack's project directory.
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parseConfigFiles = parseConfigFiles;
+const fs = __importStar(__nccwpck_require__(9896));
+const path = __importStar(__nccwpck_require__(6928));
+/**
+ * Parses a multiline string of local_path:remote_path mappings.
+ *
+ * Rules:
+ * - Blank lines are skipped
+ * - Lines starting with # are treated as comments and skipped
+ * - Format: local/path:remote/path (split on first colon)
+ * - Validates the local file exists and reads its content
+ * - Validates remote path is relative (no leading /)
+ * - Duplicate remote paths throw an error
+ *
+ * @param input - Multiline string of path mappings
+ * @returns Array of ConfigFileEntry objects
+ */
+function parseConfigFiles(input) {
+    if (!input || input.trim() === '') {
+        return [];
+    }
+    const lines = input.split('\n');
+    const seenRemotePaths = new Set();
+    const result = [];
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        // Skip blank lines and comments
+        if (line === '' || line.startsWith('#')) {
+            continue;
+        }
+        const colonIndex = line.indexOf(':');
+        if (colonIndex === -1) {
+            throw new Error(`Malformed config file mapping on line ${i + 1}: "${line}" — expected local_path:remote_path format`);
+        }
+        const localRaw = line.substring(0, colonIndex).trim();
+        const remoteRaw = line.substring(colonIndex + 1).trim();
+        if (localRaw === '') {
+            throw new Error(`Empty local path on line ${i + 1}: "${line}" — local path cannot be empty`);
+        }
+        if (remoteRaw === '') {
+            throw new Error(`Empty remote path on line ${i + 1}: "${line}" — remote path cannot be empty`);
+        }
+        // Remote path must be relative (no leading /)
+        if (remoteRaw.startsWith('/')) {
+            throw new Error(`Absolute remote path on line ${i + 1}: "${remoteRaw}" — remote path must be relative (no leading /)`);
+        }
+        // Check for duplicate remote paths
+        if (seenRemotePaths.has(remoteRaw)) {
+            throw new Error(`Duplicate remote path on line ${i + 1}: "${remoteRaw}" — each remote path must be unique`);
+        }
+        // Resolve and validate local file
+        const resolvedLocal = path.resolve(localRaw);
+        if (!fs.existsSync(resolvedLocal)) {
+            throw new Error(`Config file not found on line ${i + 1}: ${resolvedLocal}`);
+        }
+        const stat = fs.statSync(resolvedLocal);
+        if (!stat.isFile()) {
+            throw new Error(`Config path is not a file on line ${i + 1}: ${resolvedLocal}`);
+        }
+        const content = fs.readFileSync(resolvedLocal, 'utf-8');
+        seenRemotePaths.add(remoteRaw);
+        result.push({
+            localPath: resolvedLocal,
+            remotePath: remoteRaw,
+            content,
+        });
+    }
+    return result;
+}
+//# sourceMappingURL=config-file-parser.js.map
 
 /***/ }),
 

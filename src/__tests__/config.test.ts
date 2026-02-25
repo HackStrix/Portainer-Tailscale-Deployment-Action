@@ -52,6 +52,7 @@ describe('getConfig', () => {
             stack_name: 'my-app',
             compose_file: tempComposeFile,
             endpoint_id: '1',
+            config_files: './some/file:remote.conf',
         });
 
         const config = getConfig();
@@ -67,6 +68,7 @@ describe('getConfig', () => {
         expect(config.deployment.endpointId).toBe(1);
         expect(config.deployment.tlsSkipVerify).toBe(false);
         expect(config.deployment.action).toBe('deploy');
+        expect(config.deployment.configFilesRaw).toBe('./some/file:remote.conf');
     });
 
     it('should parse valid config with auth key fallback', () => {

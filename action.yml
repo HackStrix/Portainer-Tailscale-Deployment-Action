@@ -54,6 +54,10 @@ inputs:
     description: 'Multiline KEY=VALUE environment variables (replaces all stack env vars)'
     required: false
     default: ''
+  config_files:
+    description: 'Multiline list of local_path:remote_path config files to upload alongside the compose file (applied on stack creation only)'
+    required: false
+    default: ''
   tls_skip_verify:
     description: 'Skip TLS certificate verification (for self-signed certs)'
     required: false

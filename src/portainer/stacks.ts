@@ -7,6 +7,7 @@ import * as core from '@actions/core';
 import { PortainerClient } from './client';
 import {
     PortainerStack,
+    ConfigFile,
     CreateStackRequest,
     UpdateStackRequest,
     DeployResult,
@@ -52,16 +53,46 @@ export async function findStackByName(
 
 /**
  * Creates a new standalone compose stack.
+ * When configFiles are provided, uses multipart/form-data upload via the /file endpoint.
+ * Otherwise, uses the existing /string endpoint with JSON body.
  */
 export async function createStack(
     client: PortainerClient,
     endpointId: number,
     name: string,
     composeContent: string,
-    envVars: StackEnvVar[]
+    envVars: StackEnvVar[],
+    configFiles: ConfigFile[] = []
 ): Promise<PortainerStack> {
     core.info(`Creating stack "${name}"...`);
 
+    if (configFiles.length > 0) {
+        core.info(`📎 Uploading ${configFiles.length} config file(s) via multipart upload`);
+
+        const formData = new FormData();
+        formData.append('Name', name);
+        formData.append('Env', JSON.stringify(envVars));
+
+        // Main compose file as a Blob
+        const composeBlob = new Blob([composeContent], { type: 'application/x-yaml' });
+        formData.append('file', composeBlob, 'docker-compose.yml');
+
+        // Additional config files
+        for (const cf of configFiles) {
+            const fileBlob = new Blob([cf.content], { type: 'application/octet-stream' });
+            formData.append('file', fileBlob, cf.remotePath);
+        }
+
+        const stack = await client.postFormData<PortainerStack>(
+            `/api/stacks/create/standalone/file?endpointId=${endpointId}`,
+            formData
+        );
+
+        core.info(`✅ Stack "${name}" created with config files (ID: ${stack.Id})`);
+        return stack;
+    }
+
+    // No config files — use the existing JSON /string endpoint
     const body: CreateStackRequest = {
         name,
         stackFileContent: composeContent,
@@ -69,7 +100,6 @@ export async function createStack(
         fromAppTemplate: false,
     };
 
-    // type=2 = standalone compose stack
     const stack = await client.post<PortainerStack>(
         `/api/stacks/create/standalone/string?endpointId=${endpointId}`,
         body
@@ -124,17 +154,26 @@ export async function deleteStack(
 
 /**
  * Orchestrates stack deployment: finds the stack, then either creates or updates.
+ * Config files are only uploaded on creation (Portainer update API doesn't support multipart).
  */
 export async function deployStack(
     client: PortainerClient,
     endpointId: number,
     stackName: string,
     composeContent: string,
-    envVars: StackEnvVar[]
+    envVars: StackEnvVar[],
+    configFiles: ConfigFile[] = []
 ): Promise<DeployResult> {
     const existing = await findStackByName(client, stackName, endpointId);
 
     if (existing) {
+        if (configFiles.length > 0) {
+            core.warning(
+                '⚠️ Config files are only uploaded on stack creation. ' +
+                'The existing stack will be updated with new compose content and env vars only. ' +
+                'To re-upload config files, delete the stack first and redeploy.'
+            );
+        }
         const updated = await updateStack(
             client,
             existing.Id,
@@ -149,7 +188,8 @@ export async function deployStack(
             endpointId,
             stackName,
             composeContent,
-            envVars
+            envVars,
+            configFiles
         );
         return { stackId: created.Id, status: 'created' };
     }

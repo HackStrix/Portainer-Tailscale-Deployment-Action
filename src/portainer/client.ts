@@ -57,6 +57,37 @@ export class PortainerClient {
     }
 
     /**
+     * Sends a POST request with multipart/form-data to the Portainer API.
+     * Used for file-based stack creation.
+     */
+    async postFormData<T>(path: string, formData: FormData): Promise<T> {
+        const url = `${this.baseUrl}${path}`;
+        core.debug(`POST (form-data) ${url}`);
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-API-Key': this.headers['X-API-Key'],
+            },
+            body: formData,
+        });
+
+        const body = await response.text();
+
+        if (!response.ok) {
+            throw this.createError('POST', path, response.status, body);
+        }
+
+        try {
+            return JSON.parse(body) as T;
+        } catch {
+            throw new Error(
+                `Failed to parse JSON response from POST ${path}: ${body.substring(0, 200)}`
+            );
+        }
+    }
+
+    /**
      * Sends a PUT request to the Portainer API.
      */
     async put<T>(path: string, body: unknown): Promise<T> {
